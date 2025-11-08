@@ -12,6 +12,13 @@ OUTPUT_FOLDER = 'outputs'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
+@app.route('/')
+def home():
+    return """
+    <h1>Gherkin Backend Service</h1>
+    <p>Upload your .docx file via POST to <code>/upload</code>.</p>
+    """
+
 @app.route('/upload', methods=['POST'])
 def upload_file():
     if 'file' not in request.files:
