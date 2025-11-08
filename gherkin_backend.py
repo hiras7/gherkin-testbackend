@@ -35,20 +35,20 @@ def generate_gherkin_document(input_path, output_path):
     for para in doc.paragraphs:
         output_doc.add_paragraph(para.text, style='Normal')
 
-    output_doc.add_paragraph("
-Summary Table", style='Heading 1')
+    output_doc.add_paragraph("Summary Table", style='Heading 1')
     table = output_doc.add_table(rows=1, cols=5, style='Table Grid')
     hdr_cells = table.rows[0].cells
     headers = ['Topic', 'Req ID', 'Name', '# FIT Criteria', '# Gherkin Scenarios']
     for i, header in enumerate(headers):
         hdr_cells[i].text = header
-        for cell in hdr_cells:
-            for paragraph in cell.paragraphs:
-                paragraph.alignment = 1
-                for run in paragraph.runs:
-                    run.bold = True
+    for cell in hdr_cells:
+        for paragraph in cell.paragraphs:
+            paragraph.alignment = 1
+            for run in paragraph.runs:
+                run.bold = True
 
     output_doc.save(output_path)
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
