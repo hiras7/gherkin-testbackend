@@ -174,24 +174,28 @@ def generate_gherkin_document(input_path, output_path, mode='optimized', flags=N
 
 @app.route('/preview', methods=['POST'])
 def preview():
-    if 'file' not in request.files: return jsonify({'error':'No file part'}), 400
-    file = request.files['file']
+    try:
+        if 'file' not in request.files: return jsonify({'error':'No file part'}), 400
     if file.filename=='' or not file.filename.lower().endswith('.docx'): return jsonify({'error':'Invalid file (.docx expected)'}), 400
     p = os.path.join(UPLOAD_FOLDER, file.filename); file.save(p)
     mode, flags, guidelines = get_mode_flags_guidelines(request.form)
     t0=time.perf_counter(); data=parse_requirements_from_docx(p); elapsed=round(time.perf_counter()-t0,3)
-    return jsonify({'time':elapsed, 'data':data, 'rules':build_rules(mode,flags), 'overview':compute_overview(data,mode,flags), 'guidelines':guidelines})
+        return jsonify({'time':elapsed, 'data':data, 'rules':build_rules(mode,flags), 'overview':compute_overview(data,mode,flags), 'guidelines':guidelines})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
-    if 'file' not in request.files: return jsonify({'error':'No file part'}), 400
-    file = request.files['file']
+    try:
+        if 'file' not in request.files: return jsonify({'error':'No file part'}), 400
     if file.filename=='' or not file.filename.lower().endswith('.docx'): return jsonify({'error':'Invalid file (.docx expected)'}), 400
     p = os.path.join(UPLOAD_FOLDER, file.filename); file.save(p)
     mode, flags, guidelines = get_mode_flags_guidelines(request.form)
     out = os.path.join(OUTPUT_FOLDER, 'gherkin_output.docx')
     t0=time.perf_counter(); data=generate_gherkin_document(p, out, mode=mode, flags=flags, guidelines=guidelines); elapsed=round(time.perf_counter()-t0,3)
-    resp = make_response(send_file(out, as_attachment=True)); resp.headers['X-Process-Time'] = str(elapsed); return resp
+        return resp
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__=='__main__':
     port=int(os.environ.get('PORT','5000')); app.run(host='0.0.0.0', port=port, debug=False)
