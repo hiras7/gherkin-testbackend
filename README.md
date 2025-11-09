@@ -1,47 +1,21 @@
 
-# Gherkin Backend — Deployment Package
+# Backend (Gherkin Intelligence API)
 
-This package provides a Flask backend that parses requirement `.docx` files and generates optimized Gherkin scenarios.
+Endpoints:
+- `GET /` → banner
+- `GET /healthz` → health
+- `POST /preview` → JSON with `overviewTotals` (and per-req overview if needed)
+- `POST /upload` → generated `.docx` (header: `X-Process-Time`)
 
-## Endpoints
-- `GET /` — service banner
-- `GET /healthz` — health probe
-- `POST /preview` — returns JSON preview (parsed requirements, rules, overview)
-- `POST /upload` — returns generated `.docx` (sets header `X-Process-Time`)
+Modes (`mode` form field):
+- `optimized` (NEW): ≤3 FIT→1 scenario; 4–10 (single theme)→3; >10 or multi-theme→4
+- `ultra-optimized`: always 1 scenario (legacy)
+- `atomized`: 1 scenario per FIT
 
-## Local Development
-```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-python gherkin_backend.py
-# open http://localhost:5000
+Render start command:
+```
+gunicorn gherkin_backend:app --bind 0.0.0.0:$PORT
 ```
 
-### Quick test
-```bash
-curl -i http://localhost:5000/
-# Preview
-curl -i -X POST -F "file=@/path/to/sample.docx" http://localhost:5000/preview
-# Generate
-curl -o gherkin_output.docx -X POST -F "file=@/path/to/sample.docx" http://localhost:5000/upload
-```
-
-## Render Deployment
-1. **Create Web Service** on Render and connect this repo or upload these files.
-2. **Build command**: (auto) `pip install -r requirements.txt`
-3. **Start command**:
-   ```
-   gunicorn gherkin_backend:app --bind 0.0.0.0:$PORT
-   ```
-4. **Environment variable**:
-   - `FRONTEND_ORIGIN` — your frontend origin (e.g., `https://<user>.github.io`). Use `*` while testing.
-
-### Health check (optional)
-Set health check path to `/healthz`.
-
-## Frontend Hookup
-Open your static site with:
-```
-?api=https://<your-app>.onrender.com
-```
-Or paste the URL in the frontend Settings dialog. Then **Preview** and **Generate** should work.
+Env var:
+- `FRONTEND_ORIGIN` = your static site origin (e.g., `https://<user>.github.io`). Use `*` for testing.
