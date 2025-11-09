@@ -224,106 +224,94 @@ def build_rules(mode, flags):
     ])
     return rules
 
-# ---------- Document generation ----------
+# ---------- Playwright (.ts) generation ----------
 
-def generate_gherkin_document(input_path, output_path, mode='optimized', flags=None, guidelines=''):
-    flags = flags or {}
-    data = parse_requirements_from_docx(input_path)
-    doc = Document()
+def ts_identifier(s: str) -> str:
+    s = (s or "").strip()
+    s = re.sub(r"[^\w\s\-]", "", s)
+    s = re.sub(r"\s+", " ", s)
+    return s[:80]
 
-    for r in data:
-        req_id = r.get('ReqID', 'UNKNOWN')
-        req_name = r.get('ReqName', '')
-        topic = r.get('Topic', '') or req_name
-        requirement = r.get('Requirement', '')
-        rationale = r.get('Rationale', '')
-        fits = r.get('FitCriteria', [])
+def data_testid_from_text(s: str) -> str:
+    base = re.sub(r"[^A-Za-z0-9]+", "-", (s or "").strip().lower()).strip("-")
+    return base or "element"
 
-        doc.add_paragraph(f"REQ ID: {req_id}")
-        doc.add_paragraph(f"REQ NAME: {req_name}")
-        doc.add_paragraph("")
-        doc.add_paragraph(f"Feature: {topic}")
+def render_ts_block_for_requirement(r: dict, mode: str) -> str:
+    req_id = r.get('ReqID', 'UNKNOWN')
+    topic  = r.get('Topic', '') or r.get('ReqName', '')
+    fits   = r.get('FitCriteria', []) or []
+    n_scen = scenario_count_by_mode(fits, mode)
 
-        actor = actor_from_text(requirement, flags)
-        doc.add_paragraph(f"As a {actor}")
-        doc.add_paragraph(f"I want {topic.lower()}")
-        doc.add_paragraph(f"So that {rationale or 'business value is achieved'}")
-        doc.add_paragraph("")
+    lines = []
+    feature_name = ts_identifier(f"{req_id} {topic}".strip())
+    lines.append(f"test.describe('{feature_name}', () => {{")
 
-        mode_local = mode
-        if mode_local == 'atomized' and fits:
-            for i, fit in enumerate(fits, 1):
-                doc.add_paragraph(f"@REQ-{req_id}")
-                doc.add_paragraph(f"Scenario: {topic} — FIT {i}")
-                doc.add_paragraph("Given the user is logged in" if actor == 'the user' else f"Given {actor} is authenticated")
-                doc.add_paragraph(f"When the system evaluates requirement {req_id}")
-                doc.add_paragraph(f"Then {fit}")
-                doc.add_paragraph("")
-        else:
-            k = scenario_count_by_mode(fits, mode_local)
-            if k == 1:
-                doc.add_paragraph(f"@REQ-{req_id}")
-                doc.add_paragraph(f"Scenario: {topic}")
-                doc.add_paragraph("Given the user is logged in" if actor == 'the user' else f"Given {actor} is authenticated")
-                doc.add_paragraph(f"When the system evaluates requirement {req_id}")
-                if fits:
-                    doc.add_paragraph(f"Then it should satisfy {len(fits)} FIT criteria")
-                    for line in fits:
-                        doc.add_paragraph(f"And {line}")
-                else:
-                    doc.add_paragraph("Then it should meet the specified acceptance criteria")
-                doc.add_paragraph("")
+    if mode == 'atomized' and fits:
+        for i, fit in enumerate(fits, 1):
+            scen_name = ts_identifier(f"{topic} — FIT {i}")
+            tid = data_testid_from_text(fit)
+            lines.extend([
+                f"  test('{scen_name}', async ({{ page }}) => {{",
+                f"    await page.goto(`${{BASE_URL}}/dashboard`); // pre-auth assumed",
+                f"    // FIT: {fit}",
+                f"    await expect(page.getByTestId('{tid}')).toBeVisible();",
+                f"  }});"
+            ])
+    else:
+        k = n_scen
+        if k == 1:
+            scen_name = ts_identifier(topic or req_id)
+            lines.extend([
+                f"  test('{scen_name}', async ({{ page }}) => {{",
+                f"    await page.goto(`${{BASE_URL}}/dashboard`); // pre-auth assumed",
+            ])
+            if fits:
+                for j, fit in enumerate(fits):
+                    tid = data_testid_from_text(fit)
+                    prefix = "Then" if j == 0 else "And"
+                    lines.append(f"    // {prefix}: {fit}")
+                    lines.append(f"    await expect(page.getByTestId('{tid}')).toBeVisible();")
             else:
-                buckets = themed_buckets(fits, k)
-                for idx, (name, lines) in enumerate(buckets, 1):
-                    doc.add_paragraph(f"@REQ-{req_id}")
-                    suffix = f" — {name.title()}" if name and name != 'misc' else f" — Group {idx}"
-                    doc.add_paragraph(f"Scenario: {topic}{suffix}")
-                    doc.add_paragraph("Given the user is logged in" if actor == 'the user' else f"Given {actor} is authenticated")
-                    doc.add_paragraph(f"When the system evaluates requirement {req_id}")
-                    if lines:
-                        for j, line in enumerate(lines):
-                            if j == 0:
-                                doc.add_paragraph(f"Then {line}")
-                            else:
-                                doc.add_paragraph(f"And {line}")
-                    else:
-                        doc.add_paragraph("Then it should meet the specified acceptance criteria")
-                    doc.add_paragraph("")
+                lines.append("    // Then: it should meet the specified acceptance criteria")
+            lines.append("  });")
+        else:
+            buckets = themed_buckets(fits, k)
+            for idx, (name, group) in enumerate(buckets, 1):
+                scen_name = ts_identifier(f"{topic} — {name or f'Group {idx}'}")
+                lines.extend([
+                    f"  test('{scen_name}', async ({{ page }}) => {{",
+                    f"    await page.goto(`${{BASE_URL}}/dashboard`); // pre-auth assumed",
+                ])
+                if group:
+                    for j, fit in enumerate(group):
+                        tid = data_testid_from_text(fit)
+                        prefix = "Then" if j == 0 else "And"
+                        lines.append(f"    // {prefix}: {fit}")
+                        lines.append(f"    await expect(page.getByTestId('{tid}')).toBeVisible();")
+                else:
+                    lines.append("    // Then: it should meet the specified acceptance criteria")
+                lines.append("  });")
 
-    def append_meta(document):
-        document.add_paragraph("Rules Applied", style='Heading 1')
-        for rr in build_rules(mode, flags):
-            document.add_paragraph(f"- {rr}")
-        if guidelines:
-            document.add_paragraph("Guidelines (provided)", style='Heading 1')
-            for line in guidelines.splitlines():
-                document.add_paragraph(line)
+    lines.append("});")
+    return "
+".join(lines)
 
-    doc.save(output_path)
-    doc2 = Document(output_path)
-    append_meta(doc2)
-
-    doc2.add_paragraph("Summary Table", style='Heading 1')
-    tbl = doc2.add_table(rows=1, cols=5, style='Table Grid')
-    hdr = ['Topic', 'Req ID', 'Name', '# FIT Criteria', '# Gherkin Scenarios']
-    for i, h in enumerate(hdr):
-        cell = tbl.rows[0].cells[i]
-        cell.text = h
-        for run in cell.paragraphs[0].runs:
-            run.bold = True
-
-    parsed = parse_requirements_from_docx(input_path)
-    for r in parsed:
-        fits = r.get('FitCriteria', [])
-        row = tbl.add_row().cells
-        row[0].text = r.get('Topic', '') or ''
-        row[1].text = r.get('ReqID', '') or ''
-        row[2].text = r.get('ReqName', '') or ''
-        row[3].text = str(len(fits))
-        row[4].text = str(scenario_count_by_mode(fits, mode))
-
-    doc2.save(output_path)
+def generate_playwright_ts(input_path: str, output_ts_path: str, mode: str = 'optimized'):
+    data = parse_requirements_from_docx(input_path)
+    chunks = [
+        "// Auto-generated by Gherkin Intelligence Engine",
+        "import { test, expect } from '@playwright/test';",
+        "",
+        "const BASE_URL = process.env.BASE_URL ?? 'https://your-app.example.com';",
+        ""
+    ]
+    for r in data:
+        chunks.append(render_ts_block_for_requirement(r, mode))
+        chunks.append("")
+    ts_code = "
+".join(chunks)
+    with open(output_ts_path, 'w', encoding='utf-8') as f:
+        f.write(ts_code)
     return True
 
 # ---------- Routes ----------
@@ -397,6 +385,133 @@ def upload_file():
     resp = make_response(send_file(out, as_attachment=True))
     resp.headers['X-Process-Time'] = str(elapsed)
     return resp
+
+@app.route('/generate_playwright', methods=['POST'])
+def generate_playwright():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file part'}), 400
+    file = request.files['file']
+    if file.filename == '' or not file.filename.lower().endswith('.docx'):
+        return jsonify({'error': 'Invalid file (.docx expected)'}), 400
+
+    path = os.path.join(UPLOAD_FOLDER, file.filename)
+    file.save(path)
+
+    mode, flags, _ = get_mode_flags_guidelines(request.form)
+    out_ts = os.path.join(OUTPUT_FOLDER, 'gherkin_tests.spec.ts')
+
+    t0 = time.perf_counter()
+    _ = generate_playwright_ts(path, out_ts, mode=mode)
+    elapsed = round(time.perf_counter() - t0, 3)
+
+    resp = make_response(send_file(out_ts, as_attachment=True))
+    resp.headers['X-Process-Time'] = str(elapsed)
+    return resp
+
+# ---------- Document generation (existing) ----------
+from docx import Document
+
+def generate_gherkin_document(input_path, output_path, mode='optimized', flags=None, guidelines=''):
+    flags = flags or {}
+    data = parse_requirements_from_docx(input_path)
+    doc = Document()
+
+    for r in data:
+        req_id = r.get('ReqID', 'UNKNOWN')
+        req_name = r.get('ReqName', '')
+        topic = r.get('Topic', '') or req_name
+        requirement = r.get('Requirement', '')
+        rationale = r.get('Rationale', '')
+        fits = r.get('FitCriteria', [])
+
+        # Header block
+        doc.add_paragraph(f"REQ ID: {req_id}")
+        doc.add_paragraph(f"REQ NAME: {req_name}")
+        doc.add_paragraph("")
+        doc.add_paragraph(f"Feature: {topic}")
+
+        actor = actor_from_text(requirement, flags)
+        doc.add_paragraph(f"As a {actor}")
+        doc.add_paragraph(f"I want {topic.lower()}")
+        doc.add_paragraph(f"So that {rationale or 'business value is achieved'}")
+        doc.add_paragraph("")
+
+        mode_local = mode
+        if mode_local == 'atomized' and fits:
+            for i, fit in enumerate(fits, 1):
+                doc.add_paragraph(f"@REQ-{req_id}")
+                doc.add_paragraph(f"Scenario: {topic} — FIT {i}")
+                doc.add_paragraph("Given the user is logged in" if actor == 'the user' else f"Given {actor} is authenticated")
+                doc.add_paragraph(f"When the system evaluates requirement {req_id}")
+                doc.add_paragraph(f"Then {fit}")
+                doc.add_paragraph("")
+        else:
+            k = scenario_count_by_mode(fits, mode_local)
+            if k == 1:
+                doc.add_paragraph(f"@REQ-{req_id}")
+                doc.add_paragraph(f"Scenario: {topic}")
+                doc.add_paragraph("Given the user is logged in" if actor == 'the user' else f"Given {actor} is authenticated")
+                doc.add_paragraph(f"When the system evaluates requirement {req_id}")
+                if fits:
+                    doc.add_paragraph(f"Then it should satisfy {len(fits)} FIT criteria")
+                    for line in fits:
+                        doc.add_paragraph(f"And {line}")
+                else:
+                    doc.add_paragraph("Then it should meet the specified acceptance criteria")
+                doc.add_paragraph("")
+            else:
+                buckets = themed_buckets(fits, k)
+                for idx, (name, lines) in enumerate(buckets, 1):
+                    doc.add_paragraph(f"@REQ-{req_id}")
+                    suffix = f" — {name.title()}" if name and name != 'misc' else f" — Group {idx}"
+                    doc.add_paragraph(f"Scenario: {topic}{suffix}")
+                    doc.add_paragraph("Given the user is logged in" if actor == 'the user' else f"Given {actor} is authenticated")
+                    doc.add_paragraph(f"When the system evaluates requirement {req_id}")
+                    if lines:
+                        for j, line in enumerate(lines):
+                            if j == 0:
+                                doc.add_paragraph(f"Then {line}")
+                            else:
+                                doc.add_paragraph(f"And {line}")
+                    else:
+                        doc.add_paragraph("Then it should meet the specified acceptance criteria")
+                    doc.add_paragraph("")
+
+    # Append meta (rules/guidelines) + summary table
+    def append_meta(document):
+        document.add_paragraph("Rules Applied", style='Heading 1')
+        for rr in build_rules(mode, flags):
+            document.add_paragraph(f"- {rr}")
+        if guidelines:
+            document.add_paragraph("Guidelines (provided)", style='Heading 1')
+            for line in guidelines.splitlines():
+                document.add_paragraph(line)
+
+    doc.save(output_path)
+    doc2 = Document(output_path)
+    append_meta(doc2)
+
+    doc2.add_paragraph("Summary Table", style='Heading 1')
+    tbl = doc2.add_table(rows=1, cols=5, style='Table Grid')
+    hdr = ['Topic', 'Req ID', 'Name', '# FIT Criteria', '# Gherkin Scenarios']
+    for i, h in enumerate(hdr):
+        cell = tbl.rows[0].cells[i]
+        cell.text = h
+        for run in cell.paragraphs[0].runs:
+            run.bold = True
+
+    parsed = parse_requirements_from_docx(input_path)
+    for r in parsed:
+        fits = r.get('FitCriteria', [])
+        row = tbl.add_row().cells
+        row[0].text = r.get('Topic', '') or ''
+        row[1].text = r.get('ReqID', '') or ''
+        row[2].text = r.get('ReqName', '') or ''
+        row[3].text = str(len(fits))
+        row[4].text = str(scenario_count_by_mode(fits, mode))
+
+    doc2.save(output_path)
+    return True
 
 # ---------- Entrypoint ----------
 if __name__ == '__main__':
