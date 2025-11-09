@@ -88,7 +88,6 @@ def parse_requirements_from_docx(path: str):
         if not cur: continue
         if section == 'Requirement':
         cur['Requirement'] = (cur.get('Requirement', '') + (' ' if cur.get('Requirement') else '') + text)
-" if cur.get('Requirement') else "") + text)
             cur['Rationale'] = (cur.get('Rationale','') + ("
 " if cur.get('Rationale') else "") + text)
         elif section == 'Fit':

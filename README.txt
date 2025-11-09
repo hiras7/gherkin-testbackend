@@ -11,7 +11,7 @@ This bundle contains a Flask backend for generating Gherkin scenarios from .docx
 
 ## Deployment on Render
 1. Create a new Web Service on [Render](https://render.com).
-2. Use this GitHub repo or upload the ZIP.
+2. Use this ZIP bundle or push to a GitHub repo.
 3. Set the **Start Command** to:
    ```
    gunicorn gherkin_backend:app --bind 0.0.0.0:$PORT
