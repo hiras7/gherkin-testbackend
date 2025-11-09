@@ -114,7 +114,7 @@ def parse_requirements_from_docx(path: str):
     } for it in items]
 
 # ---------- Optimized algorithm helpers ----------
-THEME_SPLIT_RE = re.compile(r'\s*[:\-–—>→]\s*')  # :, -, –, —, >, →
+THEME_SPLIT_RE = re.compile(r'\s*[:\-–—>→]\s*')  # :, -, –, —, ->, →
 
 def extract_theme(line: str):
     s = (line or '').strip()
@@ -128,7 +128,6 @@ def extract_theme(line: str):
     return None
 
 def group_fits_by_theme(fits):
-    from collections import defaultdict
     groups = defaultdict(list)
     for line in fits or []:
         theme = extract_theme(line) or 'misc'
@@ -140,15 +139,15 @@ def scenario_count_by_mode(fits, mode: str) -> int:
         return len(fits or [])
     if mode == 'ultra-optimized':
         return 1
-    # optimized (new logic)
+    # optimized (NEW 1/2/3 logic)
     n = len(fits or [])
     themes = group_fits_by_theme(fits)
     multiple_topics = len(themes.keys()) > 1
     if n <= 3:
         return 1
     if 4 <= n <= 10 and not multiple_topics:
-        return 3
-    return 4  # >10 OR multiple topics
+        return 2
+    return 3  # >10 OR multiple topics
 
 def looks_like_kv(line: str) -> bool:
     return bool(re.search(r'[:=]\s', line or ''))
@@ -176,7 +175,7 @@ def themed_buckets(fits, k: int):
     groups = group_fits_by_theme(fits)
     sorted_groups = sorted(groups.items(), key=lambda x: len(x[1]), reverse=True)
     if len(sorted_groups) >= k:
-        picks = [list(x) for x in sorted_groups[:k]]  # [ [name, list], ... ]
+        picks = [list(x) for x in sorted_groups[:k]]
         leftovers = [ln for _, ls in sorted_groups[k:] for ln in ls]
         for i, ln in enumerate(leftovers):
             picks[i % k][1].append(ln)
@@ -215,7 +214,7 @@ def build_rules(mode, flags):
     elif mode == 'ultra-optimized':
         rules.append('Mode: Ultra‑Optimized — one scenario per requirement (legacy behavior)')
     else:
-        rules.append('Mode: Optimized — ≤3→1, 4–10→3, >10 or multi-topic→4 scenarios')
+        rules.append('Mode: Optimized — ≤3→1, 4–10→2, >10 or multi‑topic→3 scenarios')
     rules.append(f"Scenario Outline Optimization: {'ON' if flags.get('opt_outline') else 'OFF'}")
     rules.append(f"Preserve Bullet Formatting: {'ON' if flags.get('opt_preserve_bullets') else 'OFF'}")
     rules.append(f"Strict Actor Referencing: {'ON' if flags.get('opt_strict_actor') else 'OFF'}")
@@ -240,7 +239,6 @@ def generate_gherkin_document(input_path, output_path, mode='optimized', flags=N
         rationale = r.get('Rationale', '')
         fits = r.get('FitCriteria', [])
 
-        # Header block
         doc.add_paragraph(f"REQ ID: {req_id}")
         doc.add_paragraph(f"REQ NAME: {req_name}")
         doc.add_paragraph("")
@@ -262,9 +260,8 @@ def generate_gherkin_document(input_path, output_path, mode='optimized', flags=N
                 doc.add_paragraph(f"Then {fit}")
                 doc.add_paragraph("")
         else:
-            # ultra-optimized or optimized buckets
             k = scenario_count_by_mode(fits, mode_local)
-            if k == 1:  # also covers ultra-optimized
+            if k == 1:
                 doc.add_paragraph(f"@REQ-{req_id}")
                 doc.add_paragraph(f"Scenario: {topic}")
                 doc.add_paragraph("Given the user is logged in" if actor == 'the user' else f"Given {actor} is authenticated")
