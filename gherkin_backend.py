@@ -193,9 +193,5 @@ def upload_file():
     t0=time.perf_counter(); data=generate_gherkin_document(p, out, mode=mode, flags=flags, guidelines=guidelines); elapsed=round(time.perf_counter()-t0,3)
     resp = make_response(send_file(out, as_attachment=True)); resp.headers['X-Process-Time'] = str(elapsed); return resp
 
-
-@app.route('/')
-def health():
-    return jsonify({'status': 'ok'}), 200
 if __name__=='__main__':
     port=int(os.environ.get('PORT','5000')); app.run(host='0.0.0.0', port=port, debug=False)
